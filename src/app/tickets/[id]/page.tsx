@@ -81,7 +81,7 @@ function Actions({ t }: { t: Ticket }) {
   async function run(action: Action) {
     setBusy(true);
     setError(null);
-    const r = await callApi("/api/transition", { ticket: t, action, actor: CURRENT_USER });
+    const r = await callApi("/api/transition", { ticketId: t.id, action, actor: CURRENT_USER });
     setBusy(false);
     if (r.ticket) {
       saveTicket(r.ticket);
@@ -93,7 +93,7 @@ function Actions({ t }: { t: Ticket }) {
 
   async function tryIllegal() {
     const r = await callApi("/api/transition", {
-      ticket: t,
+      ticketId: t.id,
       action: { type: "close", reason: "rescreen_normal" },
       actor: CURRENT_USER,
     });

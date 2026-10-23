@@ -73,6 +73,4 @@ export function TicketRow({ t, now }: { t: Ticket; now: Date }) {
   );
 }
 
-export function Loading() {
-  return <p className="text-muted">Loading demo data…</p>;
-}
+export { Loading } from "./Loading";

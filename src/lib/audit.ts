@@ -10,8 +10,18 @@ export const GENESIS = "0".repeat(64);
 
 export type Sha256Hex = (input: string) => Promise<string>;
 
+/** JSON with object keys sorted and undefined values dropped, so storage (e.g. Postgres jsonb key reordering) cannot change the hash. */
+export function stableStringify(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v ?? null);
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(",")}]`;
+  const entries = Object.entries(v as Record<string, unknown>)
+    .filter(([, x]) => x !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([k, x]) => `${JSON.stringify(k)}:${stableStringify(x)}`).join(",")}}`;
+}
+
 export function canonical(e: Omit<AuditEvent, "hash">): string {
-  return JSON.stringify([e.seq, e.at, e.actor, e.action, e.from, e.to, e.detail ?? null, e.prevHash]);
+  return stableStringify([e.seq, new Date(e.at).toISOString(), e.actor, e.action, e.from, e.to, e.detail ?? null, e.prevHash]);
 }
 
 export async function sealEvent(chain: AuditEvent[], pending: PendingAuditEvent, sha: Sha256Hex): Promise<AuditEvent> {

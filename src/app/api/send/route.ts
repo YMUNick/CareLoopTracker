@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { sealEvent } from "@/lib/audit";
+import { changeTicket, ChangeRejected } from "@/lib/db/repo";
 import { draftContext } from "@/lib/drafts";
 import { checkBilingual } from "@/lib/guardrail";
-import { jsonError, readTicket } from "@/lib/server";
-import { sha256Hex } from "@/lib/sha";
+import { jsonError, readJson, withDb } from "@/lib/server";
 import { applyAction } from "@/lib/stateMachine";
 import type { NotificationRecord } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
 
 // The only route that can move a ticket to "notified". Both safeguards are
 // enforced here regardless of what the UI did:
@@ -14,6 +15,7 @@ import type { NotificationRecord } from "@/lib/types";
 // (Delivery via SMS gateway is not connected in the prototype.)
 
 interface SendBody {
+  ticketId?: string;
   textEn?: string;
   textAr?: string;
   confirmed?: boolean;
@@ -24,35 +26,34 @@ interface SendBody {
 }
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
-  const read = await readTicket(body);
-  if ("error" in read) return read.error;
-  const { ticket } = read;
-  const b = body as SendBody;
-
+  const b = await readJson<SendBody>(req);
+  if (!b?.ticketId) return jsonError(400, "ticketId is required.");
   if (b.confirmed !== true || !b.confirmedBy?.trim()) {
     return jsonError(403, "Human confirmation is required. Nothing was sent.");
   }
+  const { ticketId, confirmedBy } = b;
   const textEn = b.textEn ?? "";
   const textAr = b.textAr ?? "";
-  const findings = checkBilingual(textEn, textAr, draftContext(ticket));
-  if (findings.length > 0) {
-    return jsonError(422, "Safety check failed. Nothing was sent.", { findings });
-  }
 
-  const now = new Date();
-  const notification: NotificationRecord = {
-    at: now.toISOString(),
-    sentBy: b.confirmedBy,
-    confirmedBy: b.confirmedBy,
-    channel: b.channel ?? "sms",
-    textEn,
-    textAr,
-    draftSource: b.draftSource === "azure-openai" ? "azure-openai" : "template",
-    rejectedDrafts: Math.max(0, Number(b.rejectedDrafts) || 0),
-  };
-  const r = applyAction(ticket, { type: "send_notification", notification }, b.confirmedBy, now);
-  if (!r.ok) return jsonError(409, r.error);
-  const event = await sealEvent(ticket.audit, r.event, sha256Hex);
-  return NextResponse.json({ ticket: { ...r.ticket, audit: [...ticket.audit, event] } });
+  return withDb(async (db, ds) => {
+    const ticket = await changeTicket(db, ds, ticketId, (t) => {
+      const findings = checkBilingual(textEn, textAr, draftContext(t));
+      if (findings.length > 0) throw new ChangeRejected("Safety check failed. Nothing was sent.", 422, { findings });
+      const now = new Date();
+      const notification: NotificationRecord = {
+        at: now.toISOString(),
+        sentBy: confirmedBy,
+        confirmedBy,
+        channel: b.channel ?? "sms",
+        textEn,
+        textAr,
+        draftSource: b.draftSource === "azure-openai" ? "azure-openai" : "template",
+        rejectedDrafts: Math.max(0, Number(b.rejectedDrafts) || 0),
+      };
+      const r = applyAction(t, { type: "send_notification", notification }, confirmedBy, now);
+      if (!r.ok) throw new ChangeRejected(r.error, 409);
+      return r;
+    });
+    return NextResponse.json({ ticket });
+  });
 }

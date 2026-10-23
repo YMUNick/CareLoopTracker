@@ -10,10 +10,15 @@ export function ResetButton() {
       className="ml-auto underline underline-offset-2 hover:no-underline disabled:opacity-50"
       disabled={busy}
       onClick={async () => {
-        if (!confirm("Reset all demo data to the initial synthetic set?")) return;
+        if (!confirm("Start a fresh synthetic dataset for everyone? The current one is kept in the audit history but hidden.")) return;
         setBusy(true);
-        await resetDemo();
-        setBusy(false);
+        try {
+          await resetDemo();
+        } catch (e) {
+          alert(`Reset failed: ${(e as Error).message}`);
+        } finally {
+          setBusy(false);
+        }
       }}
     >
       {busy ? "Resetting…" : "Reset demo data"}

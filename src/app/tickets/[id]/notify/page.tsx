@@ -42,7 +42,7 @@ function Review({ t }: { t: Ticket }) {
   const load = useCallback(
     async (simulateError: boolean) => {
       setBusy(true);
-      const r = await callApi("/api/draft", { ticket: t, simulateError });
+      const r = await callApi("/api/draft", { ticketId: t.id, simulateError });
       setBusy(false);
       if (r.error) return setError(r.error);
       const d = r.data.draft as Draft;
@@ -70,7 +70,7 @@ function Review({ t }: { t: Ticket }) {
 
   async function send(opts: { confirmed: boolean; textEn: string; textAr: string }) {
     return callApi("/api/send", {
-      ticket: t,
+      ticketId: t.id,
       textEn: opts.textEn,
       textAr: opts.textAr,
       confirmed: opts.confirmed,
@@ -98,7 +98,7 @@ function Review({ t }: { t: Ticket }) {
   }
 
   async function probeFlagged() {
-    const r = await callApi("/api/draft", { ticket: t, simulateError: true });
+    const r = await callApi("/api/draft", { ticketId: t.id, simulateError: true });
     const bad = r.data.draft as Draft;
     const s = await send({ confirmed: true, textEn: bad.en, textAr: bad.ar });
     const kinds = ((s.data.findings as Finding[]) ?? []).map((f) => `${f.lang}:${f.kind} "${f.match}"`).join(", ");

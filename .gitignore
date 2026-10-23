@@ -42,3 +42,6 @@ next-env.d.ts
 !.env.example
 
 .vercel
+
+# local PGlite database
+/.pglite

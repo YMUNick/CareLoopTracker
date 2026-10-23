@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Noto_Sans_Arabic } from "next/font/google";
 import Link from "next/link";
+import { StorageBadge } from "@/components/Loading";
 import { ResetButton } from "@/components/ResetButton";
 import "./globals.css";
 
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <div className="bg-warn-soft text-warn">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 py-1.5 text-xs">
             <span>Prototype · synthetic data only · not for clinical use · newborn hearing screening programme</span>
+            <StorageBadge />
             <ResetButton />
           </div>
         </div>
