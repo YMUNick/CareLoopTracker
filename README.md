@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Care Loop Tracker
 
-## Getting Started
+Every abnormal screening result gets an owner, is followed to a documented closure, and leaves a tamper-evident audit trail.
 
-First, run the development server:
+Prototype for the **Future Health Digital Innovation Challenge**, Challenge 05 *Closing the Screening-to-Care Loop*. Scope: one programme (newborn hearing screening), synthetic data only. It does not diagnose. It tracks whether the required follow-up actually happened.
+
+## What it does
+
+| Screen | Purpose |
+|---|---|
+| **Today** (`/`) | The nurse's 5 most urgent follow-ups, ordered by escalation level and days overdue |
+| **Ticket** (`/tickets/[id]`) | Case details, the actions the current step allows, and the hash-chained audit timeline |
+| **Notify** (`/tickets/[id]/notify`) | English and Arabic family message drafts, a live safety check, and explicit human confirmation |
+| **Escalations** (`/escalations`) | Owner and supervisor alerts generated for overdue steps |
+
+Demo case: **Baby A (NHS-0001)** is 2 business days overdue and already escalated. Its first draft deliberately contains two typical model mistakes, so the safety check can be seen blocking the send.
+
+## Safeguards
+
+- **State machine enforced on the server.** `abnormal → assigned → notified → consulted → referred → closed`. Illegal steps (e.g. closing before the family is notified) return `409`. See `src/lib/stateMachine.ts`.
+- **Closure needs a reason.** "Unreachable" requires 3 documented contact attempts. Transfer, death and superseded results require a note.
+- **Derived, idempotent escalation.** The escalation level is computed from the stage start time on Abu Dhabi business days (UTC+4, Sat–Sun weekend). Each notice has a unique key, so re-runs and catch-up after a missed day never duplicate. See `src/lib/escalation.ts`.
+- **Message guardrail.** Drafts are checked for diagnostic wording (EN/AR), numbers not in the record, missing call-back number, links and leaked instructions. `/api/send` re-runs the check and requires a named human confirmation (`403` / `422` otherwise). See `src/lib/guardrail.ts`.
+- **Data minimisation.** Only name, date and clinic phone reach the model. Free-text notes are never sent, which also keeps notes-based prompt injection out of the prompt.
+- **Tamper-evident audit.** Each event is sealed by the server with SHA-256 over the previous hash. The server refuses changes to tickets whose chain does not verify. See `src/lib/audit.ts`.
+
+## Run locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev     # http://localhost:3000
+npm test        # 56 unit tests: state machine, escalation, guardrail eval set, audit chain
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Optional: real AI drafting (Azure OpenAI)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Without these variables, a fixed template replaces the AI step, and the UI says so. Copy `.env.example` to `.env.local` (or set the same variables in Vercel):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_DEPLOYMENT=<deployment name>
+AZURE_OPENAI_API_VERSION=2024-10-21
+```
 
-## Learn More
+## Architecture
 
-To learn more about Next.js, take a look at the following resources:
+Next.js 15 (App Router, TypeScript), Tailwind CSS, Vitest. All domain logic in `src/lib` is pure and unit-tested. API routes in `src/app/api`:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `POST /api/transition`: apply any action except sending
+- `POST /api/draft`: produce a bilingual draft plus safety findings
+- `POST /api/send`: the only path to "notified"; enforces confirmation and the guardrail
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The data model follows FHIR `Task` (ticket) and `DiagnosticReport` (screening result) so it can later map onto an EHR.
 
-## Deploy on Vercel
+## Known gaps (prototype)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **Storage:** demo data lives in the browser (`localStorage`) so the app runs with zero setup. The server validates and seals every change, but a shared database (Postgres with DB-level constraints and an append-only audit table) is not yet connected.
+- **No authentication or roles:** the user is fixed to "Nurse Mariam K.".
+- **No delivery:** SMS and e-mail are not connected. Messages and escalations are recorded only.
+- **Arabic review:** the Arabic safety word list and templates have not been reviewed by a native-speaking clinician.
+- **Assumed SLA targets** (`SLA_BUSINESS_DAYS`) still need validation with screening staff.
+- **Synthetic data** is generated by `src/lib/seed.ts` and does not come from Synthea.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Data
+
+All people, phone numbers and results are synthetic and generated by this app. The clinic name and `+971 2 555 xxxx` numbers are fictional.
